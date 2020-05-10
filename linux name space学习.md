@@ -1,0 +1,167 @@
+sudo docker run -d --name test1 busybox /bin/sh -c "while true; do sleep 3600; done"
+
+
+
+docker exec -it 88d34cb11a60 /bin/sh
+
+/ # ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+5: eth0@if6: <BROADCAST,MULTICAST,UP,LOWER_UP,M-DOWN> mtu 1500 qdisc noqueue
+    link/ether 02:42:ac:11:00:02 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.2/16 brd 172.17.255.255 scope global eth0
+       valid_lft forever preferred_lft forever
+
+这个就是网络的namespace
+
+
+
+
+
+sudo docker run -d --name test2 busybox /bin/sh -c "while true; do sleep 3600; done"
+
+docker exec c4b6dd4abee1 ip a
+
+
+
+ip netns list
+
+
+
+ip netns  delete xx
+
+ip netns add xxx
+
+
+
+[root@docker-node1 ~]# ip netns exec test1 ip a
+1: lo: <LOOPBACK> mtu 65536 qdisc noop state DOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+
+
+
+[root@docker-node1 ~]# ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
+    link/ether 52:54:00:8a:fe:e6 brd ff:ff:ff:ff:ff:ff
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
+    link/ether 08:00:27:24:d8:c7 brd ff:ff:ff:ff:ff:ff
+4: docker0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default
+    link/ether 02:42:13:4f:f3:85 brd ff:ff:ff:ff:ff:ff
+6: veth44c37dd@if5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP mode DEFAULT group default
+    link/ether da:e5:a4:81:1c:01 brd ff:ff:ff:ff:ff:ff link-netnsid 0
+8: veth025dd75@if7: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue master docker0 state UP mode DEFAULT group default
+    link/ether b6:cb:1d:c7:da:c7 brd ff:ff:ff:ff:ff:ff link-netnsid 1
+
+
+
+ip netns exec test1 ip link set dev lo up
+
+[root@docker-node1 ~]# ip netns exec test1 ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+
+因为 无法up单个 namespace
+
+我们可以创建一对veth到 两个namespace 里去 再配一个 ip地址
+
+ip link add veth-test1 type veth peer name veth-test2
+
+[root@docker-node1 ~]# ip link
+9: veth-test2@veth-test1: <BROADCAST,MULTICAST,M-DOWN> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 0e:5a:b9:01:ff:88 brd ff:ff:ff:ff:ff:ff
+10: veth-test1@veth-test2: <BROADCAST,MULTICAST,M-DOWN> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 2a:25:17:f8:7b:af brd ff:ff:ff:ff:ff:ff
+
+先把 veth-test1 添加到 test1 这个namespace里去
+
+
+
+[root@docker-node1 ~]# ip netns exec test1 ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+
+ip link set veth-test1 netns test1  这行命令会把 上面 的 宿主机的link加到test1  这个namespace里去
+
+
+
+[root@docker-node1 ~]# ip netns exec test1 ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+10: veth-test1@if9: <BROADCAST,MULTICAST> mtu 1500 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+    link/ether 2a:25:17:f8:7b:af brd ff:ff:ff:ff:ff:ff link-netnsid 0
+
+
+
+ip link set veth-test2 netns test2 同理再把 veth-test2 加到 test2里去
+
+
+
+这个时候 veth-test1 2 都添加到了 test1 test2里去 但是这个时候 这两个namespqce都是没有ip的只有mac地址 状态也是down的
+
+下面我们去配置ip地址 给 veth-test1 2 分别添加ip地址 掩码是24
+
+ip netns exec test1 ip addr add 192.168.1.1/24 dev veth-test1
+ip netns exec test2 ip addr add 192.168.1.2/24 dev veth-test2
+
+ip netns exec test1 ip link 再次执行 会发现 还是没有ip地址 还是都是down的 
+
+我们再把这两个veth-test 12 这两个端口 up起来
+
+[root@docker-node1 ~]# ip netns exec test1 ip link set dev veth-test1 up
+[root@docker-node1 ~]# ip netns exec test2 ip link set dev veth-test2 up
+
+
+
+再去看 这两个namespace 就都起来了
+
+
+
+[root@docker-node1 ~]# ip netns exec test1 ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+10: veth-test1@if9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT group default qlen 1000
+    link/ether 2a:25:17:f8:7b:af brd ff:ff:ff:ff:ff:ff link-netnsid 1
+[root@docker-node1 ~]# ip netns exec test1 ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+10: veth-test1@if9: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 2a:25:17:f8:7b:af brd ff:ff:ff:ff:ff:ff link-netnsid 1
+    inet 192.168.1.1/24 scope global veth-test1
+       valid_lft forever preferred_lft forever
+    inet6 fe80::2825:17ff:fef8:7baf/64 scope link
+       valid_lft forever preferred_lft forever
+
+
+
+
+
+ip netns exec test1 ping 192.168.1.2  这个时候在test1 这个namespace 下执行 ping 192.168.1.2 就可以拼通了
+
+
+
+
+
+
+
+设置直接免配网 直接写入数据
+
+ty auto 改造
+
+
+
+画中画 Native SDK 
+
+峰哥压测
+
+
+
+
+
