@@ -1,3 +1,75 @@
+ip a  代替ifconfig的命令 可以查看网卡的ip、mac等
+ip link list 显示网络设备的运行状态  ip link只能看链路层的状态，看不到ip地址
+ip netns list 显示namespace
+ip netns exec test1 ip a
+
+[https://wangchujiang.com/linux-command/c/ip.html#!kw=ip%20a](https://wangchujiang.com/linux-command/c/ip.html#!kw=ip a)
+
+
+##### 创建两个namespace 就是一个独立的容器
+
+`ip netns add test1`
+`ip netns add test2`
+
+此时我们执行`ip netns exec test1 set dev lo up` 无法up该namespace 因为没有创建一对veth，于是我们先创建一对veth-peer
+
+
+
+##### 创建一对veth-pair
+
+`ip link add veth-test1 type veth peer name veth-test2`
+
+(veth-pair 就是一对的虚拟设备接口，和 tap/tun 设备不同的是，它都是成对出现的。一端连着协议栈，一端彼此相连着,https://www.cnblogs.com/bakari/p/10613710.html)
+
+此时我们执行 ip link 可以看到宿主机已经有了两个网卡
+
+
+
+##### 将veth-pair设置到namespace里去
+
+先把 veth-test1 添加到 test1 这个namespace里去
+[root@docker-node1 ~]# ip netns exec test1 ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+
+`ip link set veth-test1 netns test1`
+`ip link set veth-test2 netns test2 `
+这行命令会把 上面 的 宿主机的link加到test1  这个namespace里去
+
+
+
+##### 给veth-pair添加ip地址
+
+这个时候 veth-test1 2 都添加到了 test1 test2里去 但是这个时候 这两个namespqce都是没有ip的只有mac地址 状态也是down的
+
+下面我们去配置ip地址 给 veth-test1 2 分别添加ip地址 掩码是24
+
+`ip netns exec test1 ip addr add 192.168.1.1/24 dev veth-test1`
+`ip netns exec test2 ip addr add 192.168.1.2/24 dev veth-test2`
+
+
+
+##### 启动接口
+
+ip netns exec test1 ip link 再次执行 会发现 还是没有ip地址 还是都是down的 
+
+`ip netns exec test1 ip link set dev veth-test1 up`
+`ip netns exec test2 ip link set dev veth-test2 up`
+
+此时已经可以从两个namespace拼通了
+
+ip netns exec test1 ping 192.168.1.2
+
+
+
+
+
+
+
+
+
+###### 其他记录
+
 sudo docker run -d --name test1 busybox /bin/sh -c "while true; do sleep 3600; done"
 
 
@@ -164,4 +236,9 @@ ty auto 改造
 
 
 
+
+针对测试上平台自动化用例执行， 测试APP落地在哪的问题，早上跟冯晓还有其他几位客户端的几位负责人还有天青 春峰 云图 大狗等一起确定了：
+1.测试APP在平台上单独提供下载
+
+2.
 
