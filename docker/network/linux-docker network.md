@@ -17,7 +17,6 @@ ip netns exec test1 ip a
 此时我们执行`ip netns exec test1 set dev lo up` 无法up该namespace 因为没有创建一对veth，于是我们先创建一对veth-peer
 
 
-
 ## 创建一对veth-pair
 
 `ip link add veth-test1 type veth peer name veth-test2`
