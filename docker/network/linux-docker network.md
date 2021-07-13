@@ -226,3 +226,31 @@ none 网络就是什么都没有的网络，一些对安全性有求高并且不
 VXLAN
 
 overlay  underlay
+
+
+
+# Docker compose
+
+
+
+docker-compose up
+
+docker-compose up -d
+
+docker-compose up -f xxxx.yml  -f默认为docker-compose.yml 
+
+docker-compose ps 查看当前的compose service
+
+docker-compose stop 停止service 不会删除
+
+docker-compose start
+
+docker-compose down 停止并删除
+
+docker-compose exec xxservice bash ...exec 后面跟service
+
+docker-compose up --scale xxservice=Num 单机。。。。
+
+
+
+# Docker Swarm
